@@ -15,18 +15,20 @@ class PaperSearcher:
     This class is responsible for collecting papers from the APIs.
     """
 
-    def __init__(
-        self,
+    def __init__( # we pass all the arguments that will be inserted into self.x when the class is instantiated.
+        self, # self gets replaced by the name of the instance once the class is instantiated
         timeout: int = 10,
         pause_seconds: float = 0.2,
         candidate_multiplier: int = 5,
         max_api_pages_per_source: int = 8,
         ranker: HybridRanker | None = None,
     ) -> None:
-        """
-        Set up the searcher object.
-        """
+        
 
+        """
+        self will be replaced by object name once the class is instantiated and then will
+        automatically be passed the above defined values from the arguments.
+        """
         self.session = requests.Session()
         self.session.trust_env = False
         self.session.headers.update({"User-Agent": "paper-topic-search/1.0 (Python requests)"})
@@ -40,13 +42,12 @@ class PaperSearcher:
     def search(self, topic: str, from_date: str, to_date: str, max_results_per_source: int = 100) -> pd.DataFrame:
         """
         Main search method.
-
         It fetches candidate papers, removes duplicates, ranks them,
         and returns a DataFrame.
         """
 
-        start_date = datetime.fromisoformat(from_date).replace(tzinfo=timezone.utc)
-        end_date = datetime.fromisoformat(to_date).replace(tzinfo=timezone.utc)
+        start_date = datetime.fromisoformat(from_date)
+        end_date = datetime.fromisoformat(to_date)
         all_results: list[PaperResult] = []
 
         source_searchers = [
@@ -98,8 +99,10 @@ class PaperSearcher:
     ) -> list[PaperResult]:
         """
         Shared helper for bioRxiv and medRxiv.
-
-        These two websites use a very similar API format.
+        bioRxiv and medRxiv use almost the same API,
+        so instead of writing the same code twice,
+        the program puts the shared logic in one function and
+        passes in which server to use.
         """
 
         end_date_str = end_date.date().isoformat()
