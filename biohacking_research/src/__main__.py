@@ -1,4 +1,4 @@
-from .paper_search import main
+from .batch_search import main
 
 
 if __name__ == "__main__":
