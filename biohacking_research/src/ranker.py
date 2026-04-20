@@ -1,4 +1,5 @@
 import time
+import os
 
 from .models import PaperResult
 from .utils import build_semantic_text, normalize_cosine_similarity, normalize_score_map, normalize_space, score_bm25
@@ -18,6 +19,16 @@ except ImportError:
 USER_AGENT = "paper-topic-search/1.0 (Python requests)"
 DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 DEFAULT_CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
+
+def _models_local_only() -> bool:
+    """
+    Keep local/offline model loading by default, but allow Azure jobs to download
+    models when BIOHACKING_MODELS_LOCAL_ONLY=false is set.
+    """
+
+    value = os.getenv("BIOHACKING_MODELS_LOCAL_ONLY", "true").strip().lower()
+    return value not in {"0", "false", "no", "off"}
 
 
 class HybridRanker:
@@ -179,7 +190,10 @@ class HybridRanker:
         """
 
         if self._embedding_model is None:
-            self._embedding_model = SentenceTransformer(self.embedding_model_name, local_files_only=True)
+            self._embedding_model = SentenceTransformer(
+                self.embedding_model_name,
+                local_files_only=_models_local_only(),
+            )
         return self._embedding_model
 
     def _get_cross_encoder(self):
@@ -188,5 +202,8 @@ class HybridRanker:
         """
 
         if self._cross_encoder is None:
-            self._cross_encoder = CrossEncoder(self.cross_encoder_model_name, local_files_only=True)
+            self._cross_encoder = CrossEncoder(
+                self.cross_encoder_model_name,
+                local_files_only=_models_local_only(),
+            )
         return self._cross_encoder

@@ -6,8 +6,18 @@ import pandas as pd
 from .ranker import DEFAULT_CROSS_ENCODER_MODEL, DEFAULT_EMBEDDING_MODEL, HybridRanker
 from .searcher import PaperSearcher
 
+''' search_papers() is main()'s helper function that runs the whole paper search process.
+
+It instantiates a ranker object from the HybridRanker class with the ranking settings you pass in.
+It calls the search() function of the PaperSearcher class and passes the ranker as an argument.
+It calls .search(...) to actually fetch and rank papers for your topic and date range.
+It returns the final results as a pandas DataFrame.
+
+Passing the settings through search_papers() lets you choose different ranking behavior per call, without editing ranker.py each time.
+search_papers() exists so callers can override the ranking setup without editing the class defaults.'''
 
 def search_papers(
+    #Main function for other Python code to call
     topic: str,
     from_date: str,
     to_date: str,
@@ -19,7 +29,8 @@ def search_papers(
     cross_encoder_model_name: str = DEFAULT_CROSS_ENCODER_MODEL,
 ) -> pd.DataFrame:
     """
-    Main function for other Python code to call.
+    All this arguments can be passed in when calling search_papers() from CLI
+    because main() and build_parser() expose them as command-line arguments.
     """
 
     ranker = HybridRanker(
@@ -40,7 +51,9 @@ def search_papers(
 
 def build_parser() -> argparse.ArgumentParser:
     """
-    Build the command-line parser.
+argparse is a Python library for reading things you type in the command line.
+ArgumentParser is the tool inside that library that defines which command-line
+inputs your program accepts and helps read them.
 
     This tells Python what inputs are allowed when the script is run
     from the terminal.
@@ -105,6 +118,7 @@ def main() -> int:
 
     parser = build_parser()
     args = parser.parse_args()
+    #reads what you typed in the terminal and stores the values in args
 
     try:
         df = search_papers(
@@ -126,6 +140,10 @@ def main() -> int:
         print("No matching papers found.")
     else:
         print(df.to_string(index=False))
+        # Save results to the specified Azure path
+        output_path = "/home/azureuser/cloudfiles/code/Users/Zoe.Fleischer/paper_search_results.csv"
+        df.to_csv(output_path, index=False)
+        print(f"Results saved to {output_path}")
 
     return 0
 
