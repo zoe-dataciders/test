@@ -48,6 +48,9 @@ class PaperSearcher:
 
         start_date = datetime.fromisoformat(from_date)
         end_date = datetime.fromisoformat(to_date)
+        
+        #initializing a local variable (an empty list) that will hold PaperResult objects 
+        #it becomes a list of PaperResult objects once data iso it in the searcher_*rxiv call
         all_results: list[PaperResult] = []
 
         source_searchers = [
@@ -58,6 +61,9 @@ class PaperSearcher:
 
         for source_searcher in source_searchers:
             try:
+                # we run the searcher and it returns various PaperResult objects
+                # these get stored in all_result just by name e.g.[PaperResult1, PaperResult2, PaperResult3, ...]
+                # so all objects from different searches are flattened into one list instead of nested lists
                 all_results.extend(source_searcher(topic, start_date, end_date, max_results_per_source))
             except (requests.RequestException, ET.ParseError, ValueError):
                 continue
@@ -67,14 +73,17 @@ class PaperSearcher:
 
         rows = [
             {
-                "name of research paper": f"{paper.title} ({paper.link})",
+                "title": paper.title,
+                "link": paper.link,
                 "date published": paper.published.date().isoformat(),
                 "relevance": round(paper.relevance, 3),
+                "source": paper.source,
+                "pdf_url": paper.pdf_url,
             }
             for paper in ranked
         ]
 
-        return pd.DataFrame(rows, columns=["name of research paper", "date published", "relevance"])
+        return pd.DataFrame(rows, columns=["title", "link", "date published", "relevance", "source", "pdf_url"])
 
     def search_biorxiv(self, topic: str, start_date: datetime, end_date: datetime, max_results: int) -> list[PaperResult]:
         """
@@ -136,6 +145,8 @@ class PaperSearcher:
                 else:
                     link = item.get("url", "")
 
+                pdf_url = f"https://www.{server}.org/content/{doi}.full.pdf" if doi else ""
+
                 results.append(
                     PaperResult(
                         title=normalize_space(item.get("title", "")),
@@ -144,6 +155,7 @@ class PaperSearcher:
                         link=link,
                         source=server,
                         abstract=normalize_space(item.get("abstract", "")),
+                        pdf_url=pdf_url,
                     )
                 )
 
@@ -225,6 +237,8 @@ class PaperSearcher:
                 if not link:
                     link = entry.findtext("atom:id", default="", namespaces=namespace)
 
+                pdf_url = link.replace("arxiv.org/abs/", "arxiv.org/pdf/") if "arxiv.org/abs/" in link else ""
+
                 results.append(
                     PaperResult(
                         title=title,
@@ -233,6 +247,7 @@ class PaperSearcher:
                         link=link,
                         source="arxiv",
                         abstract=abstract,
+                        pdf_url=pdf_url,
                     )
                 )
 

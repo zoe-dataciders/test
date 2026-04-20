@@ -22,6 +22,7 @@ class PaperResult:
     bm25_score: float = 0.0
     semantic_score: float = 0.0
     cross_encoder_score: float = 0.0
+    pdf_url: str = ""
 
 
 @dataclass

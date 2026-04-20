@@ -3,3 +3,7 @@ requests
 sentence-transformers
 pyarrow
 deltalake
+openai>=1.0.0
+pdfplumber
+azure-identity
+azure-keyvault-secrets

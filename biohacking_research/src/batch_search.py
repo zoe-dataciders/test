@@ -1,10 +1,39 @@
 import argparse
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .paper_search import search_papers
+from .pdf_analyzer import analyze_paper
+
+
+def load_secret_from_key_vault(vault_url: str, secret_name: str) -> str:
+    """
+    Load one secret value from Azure Key Vault using managed identity/default Azure credential.
+    Returns an empty string if loading fails.
+    """
+    if not vault_url or not secret_name:
+        return ""
+
+    try:
+        from azure.identity import DefaultAzureCredential  # noqa: PLC0415
+        from azure.keyvault.secrets import SecretClient  # noqa: PLC0415
+    except ImportError:
+        print(
+            "Warning: azure-identity/azure-keyvault-secrets not installed, skipping Key Vault lookup.",
+            file=sys.stderr,
+        )
+        return ""
+
+    try:
+        credential = DefaultAzureCredential()
+        client = SecretClient(vault_url=vault_url, credential=credential)
+        return client.get_secret(secret_name).value or ""
+    except Exception as exc:
+        print(f"Warning: failed to read secret '{secret_name}' from Key Vault: {exc}", file=sys.stderr)
+        return ""
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -22,6 +51,61 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("csv", "parquet", "delta", "all"),
         default="all",
         help="Storage format to write. Use delta for a lakehouse table folder.",
+    )
+    # Azure OpenAI — all three are required together to enable PDF analysis.
+    # If omitted, the program runs without PDF analysis (fast mode).
+    # Values can also be supplied via environment variables instead of CLI args.
+    parser.add_argument(
+        "--analyze-pdfs",
+        action="store_true",
+        help="Download and analyse PDFs with Azure OpenAI to extract keywords, "
+             "results summary, and methods summary.",
+    )
+    parser.add_argument(
+        "--azure-openai-endpoint",
+        default=None,
+        help="Azure OpenAI endpoint URL, e.g. https://<resource>.openai.azure.com/. "
+             "Can also be set via AZURE_OPENAI_ENDPOINT environment variable.",
+    )
+    parser.add_argument(
+        "--azure-openai-key",
+        default=None,
+        help="Azure OpenAI API key. Can also be set via AZURE_OPENAI_KEY environment variable.",
+    )
+    parser.add_argument(
+        "--azure-openai-deployment",
+        default=None,
+        help="Azure OpenAI model deployment name (e.g. gpt-4o). "
+             "Can also be set via AZURE_OPENAI_DEPLOYMENT environment variable.",
+    )
+    parser.add_argument(
+        "--azure-openai-api-version",
+        default="2024-02-01",
+        help="Azure OpenAI API version string (default: 2024-02-01).",
+    )
+    parser.add_argument(
+        "--azure-keyvault-url",
+        default="https://kv-training-zfl-dev.vault.azure.net/",
+        help="Azure Key Vault URL (default: kv-training-zfl-dev). "
+             "Can also be set via AZURE_KEYVAULT_URL.",
+    )
+    parser.add_argument(
+        "--azure-openai-key-secret-name",
+        default="openai-api-key",
+        help="Key Vault secret name for Azure OpenAI API key (default: openai-api-key). "
+             "Can also be set via AZURE_OPENAI_KEY_SECRET_NAME.",
+    )
+    parser.add_argument(
+        "--azure-openai-endpoint-secret-name",
+        default="azure-openai-endpoint",
+        help="Key Vault secret name for Azure OpenAI endpoint (default: azure-openai-endpoint). "
+             "Can also be set via AZURE_OPENAI_ENDPOINT_SECRET_NAME.",
+    )
+    parser.add_argument(
+        "--azure-openai-deployment-secret-name",
+        default="azure-openai-deployment",
+        help="Key Vault secret name for Azure OpenAI deployment (default: azure-openai-deployment). "
+             "Can also be set via AZURE_OPENAI_DEPLOYMENT_SECRET_NAME.",
     )
     return parser
 
@@ -66,6 +150,51 @@ def main() -> int:
         print("Error: No topics provided.", file=sys.stderr)
         return 1
 
+    # Build Azure OpenAI client if PDF analysis is requested
+    azure_client = None
+    azure_deployment = None
+    if args.analyze_pdfs:
+        endpoint = args.azure_openai_endpoint or os.environ.get("AZURE_OPENAI_ENDPOINT", "")
+        api_key = args.azure_openai_key or os.environ.get("AZURE_OPENAI_KEY", "")
+        azure_deployment = args.azure_openai_deployment or os.environ.get("AZURE_OPENAI_DEPLOYMENT", "")
+
+        vault_url = args.azure_keyvault_url or os.environ.get("AZURE_KEYVAULT_URL", "")
+        key_secret_name = os.environ.get("AZURE_OPENAI_KEY_SECRET_NAME", args.azure_openai_key_secret_name)
+        endpoint_secret_name = os.environ.get(
+            "AZURE_OPENAI_ENDPOINT_SECRET_NAME", args.azure_openai_endpoint_secret_name
+        )
+        deployment_secret_name = os.environ.get(
+            "AZURE_OPENAI_DEPLOYMENT_SECRET_NAME", args.azure_openai_deployment_secret_name
+        )
+
+        # If values are missing, try to fetch them from Key Vault.
+        if vault_url:
+            if not endpoint:
+                endpoint = load_secret_from_key_vault(vault_url, endpoint_secret_name)
+            if not api_key:
+                api_key = load_secret_from_key_vault(vault_url, key_secret_name)
+            if not azure_deployment:
+                azure_deployment = load_secret_from_key_vault(vault_url, deployment_secret_name)
+
+        if not endpoint or not api_key or not azure_deployment:
+            print(
+                "Error: --analyze-pdfs requires endpoint, key, and deployment values. "
+                "Provide them via CLI args, environment variables, or Key Vault.",
+                file=sys.stderr,
+            )
+            return 1
+
+        try:
+            from openai import AzureOpenAI  # noqa: PLC0415
+            azure_client = AzureOpenAI(
+                azure_endpoint=endpoint,
+                api_key=api_key,
+                api_version=args.azure_openai_api_version,
+            )
+        except ImportError:
+            print("Error: openai package not installed. Run: pip install openai", file=sys.stderr)
+            return 1
+
     all_metadata = []
 
     for topic in topics:
@@ -92,6 +221,38 @@ def main() -> int:
                 "status": "no results",
             })
             continue
+
+        # PDF analysis — enrich each row with keywords, results summary, methods summary
+        if azure_client is not None:
+            import requests as _requests  # noqa: PLC0415
+
+            session = _requests.Session()
+            session.headers.update({"User-Agent": "paper-topic-search/1.0 (Python requests)"})
+
+            keywords_col: list[str] = []
+            results_col: list[str] = []
+            methods_col: list[str] = []
+
+            total = len(results)
+            for i, row in enumerate(results.itertuples(), start=1):
+                pdf_url = getattr(row, "pdf_url", "") or ""
+                title = getattr(row, "title", "") or ""
+                print(f"  Analysing PDF {i}/{total}: {title[:60]}...")
+                analysis = analyze_paper(
+                    title=title,
+                    pdf_url=pdf_url,
+                    session=session,
+                    client=azure_client,
+                    deployment=azure_deployment,
+                )
+                keywords_col.append(analysis["keywords"])
+                results_col.append(analysis["results_summary"])
+                methods_col.append(analysis["methods_summary"])
+
+            results = results.copy()
+            results["pdf_keywords"] = keywords_col
+            results["pdf_results_summary"] = results_col
+            results["pdf_methods_summary"] = methods_col
 
         # Use topic name as table name (replace spaces with underscores)
         table_name = topic.replace(" ", "_").lower()
