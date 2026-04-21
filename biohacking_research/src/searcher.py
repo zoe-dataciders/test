@@ -133,7 +133,7 @@ class PaperSearcher:
 
             for item in collection:
                 published = parse_datetime(item.get("date"))
-                if not published or published < start_date:
+                if not published or published.date() < start_date.date():
                     continue
 
                 doi = item.get("doi", "")
@@ -220,7 +220,7 @@ class PaperSearcher:
                 published = parse_datetime(published_text)
                 if not published:
                     continue
-                if published < start_date:
+                if published.date() < start_date.date():
                     continue
 
                 saw_in_range_entry = True
