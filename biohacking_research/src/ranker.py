@@ -1,6 +1,13 @@
 import time
 import os
 
+# Disable TensorFlow integration in transformers before any import touches it.
+# The Azure ML environment ships Keras 3, which is incompatible with the TF
+# path in transformers. Setting these env vars forces transformers (and
+# sentence-transformers which depends on it) to use the PyTorch backend only.
+os.environ.setdefault("USE_TF", "0")
+os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
+
 from .models import PaperResult
 from .utils import build_semantic_text, normalize_cosine_similarity, normalize_score_map, normalize_space, score_bm25
 
