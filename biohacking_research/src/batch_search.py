@@ -45,6 +45,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--bm25-weight", type=float, default=0.45)
     parser.add_argument("--semantic-weight", type=float, default=0.55)
     parser.add_argument("--use-cross-encoder", action="store_true")
+    parser.add_argument("--output-dir", default="outputs", help="Directory to save results to")
     parser.add_argument(
         "--output-format",
         choices=("csv", "parquet", "delta", "all"),
@@ -140,7 +141,15 @@ def write_results(results, output_dir: Path, output_format: str, table_name: str
 def main() -> int:
     args = build_parser().parse_args()
 
-    output_dir = Path("./outputs")
+    output_dir = Path(args.output_dir)
+    if str(output_dir).startswith("/mnt/"):
+        fallback_dir = Path("./outputs")
+        print(
+            f"Warning: output directory '{output_dir}' is mounted under /mnt and may fail for delta writes; "
+            f"redirecting to '{fallback_dir}'.",
+            file=sys.stderr,
+        )
+        output_dir = fallback_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Parse topics from comma-separated string
