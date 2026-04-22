@@ -141,9 +141,9 @@ def write_results(results, output_dir: Path, output_format: str, table_name: str
 def main() -> int:
     args = build_parser().parse_args()
 
-    output_dir = Path(args.output_dir)
+    output_dir = Path(args.output_dir).resolve()
     if str(output_dir).startswith("/mnt/"):
-        fallback_dir = Path("./outputs")
+        fallback_dir = Path("/tmp/outputs")
         print(
             f"Warning: output directory '{output_dir}' is mounted under /mnt and may fail for delta writes; "
             f"redirecting to '{fallback_dir}'.",
