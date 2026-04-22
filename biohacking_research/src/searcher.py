@@ -1,3 +1,4 @@
+import re
 import time
 from datetime import datetime, timezone
 from xml.etree import ElementTree as ET
@@ -54,8 +55,7 @@ class PaperSearcher:
         all_results: list[PaperResult] = []
 
         source_searchers = [
-            self.search_biorxiv,
-            self.search_medrxiv,
+            self.search_europepmc,
             self.search_arxiv,
         ]
 
@@ -84,6 +84,86 @@ class PaperSearcher:
         ]
 
         return pd.DataFrame(rows, columns=["title", "link", "date published", "relevance", "source", "pdf_url"])
+
+    def search_europepmc(self, topic: str, start_date: datetime, end_date: datetime, max_results: int) -> list[PaperResult]:
+        """
+        Search Europe PMC for preprints (covers bioRxiv, medRxiv, and other preprint servers)
+        using full keyword + date range search.
+        """
+        return self._search_europepmc(topic, start_date, end_date, max_results)
+
+    def _search_europepmc(
+        self,
+        topic: str,
+        start_date: datetime,
+        end_date: datetime,
+        max_results: int,
+    ) -> list[PaperResult]:
+        url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+        start_date_str = start_date.date().isoformat()
+        end_date_str = end_date.date().isoformat()
+        query = f'{topic} AND SRC:PPR AND FIRST_PDATE:[{start_date_str} TO {end_date_str}]'
+        cursor_mark = "*"
+        page_count = 0
+        candidate_limit = max_results * self.candidate_multiplier
+        results: list[PaperResult] = []
+        html_tag_re = re.compile(r"<[^>]+>")
+
+        while len(results) < candidate_limit and page_count < self.max_api_pages_per_source:
+            params = {
+                "query": query,
+                "format": "json",
+                "pageSize": 100,
+                "resultType": "core",
+                "cursorMark": cursor_mark,
+            }
+            response = self.session.get(url, params=params, timeout=self.timeout)
+            response.raise_for_status()
+            payload = response.json()
+
+            result_list = payload.get("resultList", {}).get("result", [])
+            if not result_list:
+                break
+
+            for item in result_list:
+                published = parse_datetime(item.get("firstPublicationDate", ""))
+                if not published:
+                    continue
+
+                doi = item.get("doi", "")
+                link = f"https://doi.org/{doi}" if doi else ""
+
+                if doi and doi.startswith("10.1101/"):
+                    pdf_url = f"https://www.biorxiv.org/content/{doi}.full.pdf"
+                else:
+                    pdf_url = ""
+
+                abstract = normalize_space(html_tag_re.sub("", item.get("abstractText", "") or ""))
+
+                results.append(
+                    PaperResult(
+                        title=normalize_space(item.get("title", "")),
+                        published=published,
+                        relevance=0.0,
+                        link=link,
+                        source="europepmc",
+                        abstract=abstract,
+                        pdf_url=pdf_url,
+                    )
+                )
+
+                if len(results) >= candidate_limit:
+                    break
+
+            next_cursor = payload.get("nextCursorMark", "")
+            if not next_cursor or next_cursor == cursor_mark:
+                break
+
+            cursor_mark = next_cursor
+            page_count += 1
+            time.sleep(self.pause_seconds)
+
+        return results
 
     def search_biorxiv(self, topic: str, start_date: datetime, end_date: datetime, max_results: int) -> list[PaperResult]:
         """
