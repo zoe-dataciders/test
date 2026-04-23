@@ -21,7 +21,7 @@ def search_papers(
     topic: str,
     from_date: str,
     to_date: str,
-    max_results_per_source: int = 100,
+    max_results_per_source: int = 0,
     bm25_weight: float = 0.45,
     semantic_weight: float = 0.55,
     use_cross_encoder: bool = False,
@@ -70,8 +70,8 @@ inputs your program accepts and helps read them.
     parser.add_argument(
         "--max-results-per-source",
         type=int,
-        default=100,
-        help="Maximum number of matching papers to keep from each source.",
+        default=0,
+        help="Maximum number of matching papers to keep from each source. Use 0 to fetch all.",
     )
 
     parser.add_argument(
@@ -140,17 +140,5 @@ def main() -> int:
         print("No matching papers found.")
     else:
         print(df.to_string(index=False))
-        # Save results to the specified Azure path
-        output_path = "/home/azureuser/cloudfiles/code/Users/Zoe.Fleischer/paper_search_results.csv"
-        df.to_csv(output_path, index=False)
-        print(f"Results saved to {output_path}")
 
     return 0
-
-
-# __name__ is a special Python variable.
-# If this file is run directly, __name__ becomes "__main__".
-# If the file is imported into another file, __name__ is something else.
-# This line makes sure main() only runs when this file is executed directly.
-if __name__ == "__main__":
-    raise SystemExit(main())

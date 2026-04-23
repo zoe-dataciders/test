@@ -28,6 +28,19 @@ DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 DEFAULT_CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
 
+def _max_semantic_docs() -> int:
+    """
+    Limit semantic embedding work for very large corpora to avoid OOM/timeouts.
+    Set BIOHACKING_MAX_SEMANTIC_DOCS=0 to disable this safeguard.
+    """
+
+    raw = os.getenv("BIOHACKING_MAX_SEMANTIC_DOCS", "5000").strip()
+    try:
+        return max(int(raw), 0)
+    except ValueError:
+        return 5000
+
+
 def _models_local_only() -> bool:
     """
     Keep local/offline model loading by default, but allow Azure jobs to download
@@ -95,6 +108,10 @@ class HybridRanker:
         lexical_ranked = score_bm25(topic, results)
         if not lexical_ranked:
             return []
+
+        semantic_doc_limit = _max_semantic_docs()
+        if semantic_doc_limit > 0 and len(lexical_ranked) > semantic_doc_limit:
+            return lexical_ranked
 
         if not self.semantic_ready:
             return lexical_ranked

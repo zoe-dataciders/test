@@ -40,7 +40,7 @@ class PaperSearcher:
         self.max_api_pages_per_source = max_api_pages_per_source
         self.ranker = ranker or HybridRanker()
 
-    def search(self, topic: str, from_date: str, to_date: str, max_results_per_source: int = 100) -> pd.DataFrame:
+    def search(self, topic: str, from_date: str, to_date: str, max_results_per_source: int = 0) -> pd.DataFrame:
         """
         Main search method.
         It fetches candidate papers, removes duplicates, ranks them,
@@ -105,11 +105,16 @@ class PaperSearcher:
         query = f'{topic} AND SRC:PPR AND FIRST_PDATE:[{start_date_str} TO {end_date_str}]'
         cursor_mark = "*"
         page_count = 0
-        candidate_limit = max_results * self.candidate_multiplier
+        if max_results <= 0:
+            candidate_limit = float("inf")
+            page_limit = float("inf")
+        else:
+            candidate_limit = max_results * self.candidate_multiplier
+            page_limit = self.max_api_pages_per_source
         results: list[PaperResult] = []
         html_tag_re = re.compile(r"<[^>]+>")
 
-        while len(results) < candidate_limit and page_count < self.max_api_pages_per_source:
+        while len(results) < candidate_limit and page_count < page_limit:
             params = {
                 "query": query,
                 "format": "json",
@@ -176,11 +181,16 @@ class PaperSearcher:
         page_size = 100
         start_index = 0
         page_count = 0
-        candidate_limit = max_results * self.candidate_multiplier
+        if max_results <= 0:
+            candidate_limit = float("inf")
+            page_limit = float("inf")
+        else:
+            candidate_limit = max_results * self.candidate_multiplier
+            page_limit = self.max_api_pages_per_source
         results: list[PaperResult] = []
         namespace = {"atom": "http://www.w3.org/2005/Atom"}
 
-        while len(results) < candidate_limit and page_count < self.max_api_pages_per_source:
+        while len(results) < candidate_limit and page_count < page_limit:
             params = {
                 "search_query": build_arxiv_query(topic),
                 "start": start_index,

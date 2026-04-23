@@ -41,7 +41,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--topics", required=True, help="Comma-separated list of topics to search, e.g., 'gene therapy,CRISPR,longevity'")
     parser.add_argument("--from-date", required=True, help="Start date in YYYY-MM-DD format")
     parser.add_argument("--to-date", required=True, help="End date in YYYY-MM-DD format")
-    parser.add_argument("--max-results-per-source", type=int, default=100)
+    parser.add_argument(
+        "--max-results-per-source",
+        type=int,
+        default=0,
+        help="Maximum results to keep per source. Use 0 to fetch all available results.",
+    )
     parser.add_argument("--bm25-weight", type=float, default=0.45)
     parser.add_argument("--semantic-weight", type=float, default=0.55)
     parser.add_argument("--use-cross-encoder", action="store_true")
